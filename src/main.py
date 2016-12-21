@@ -1,103 +1,106 @@
 import warnings
 import mechanize
 import urllib
+import re
+from urlparse import urlparse
 from bs4 import BeautifulSoup
 
-browser = mechanize.Browser()
+class EmailScraper:
+	""" Email Scraper """
 
+	def __init__(self):
+		warnings.filterwarnings('ignore')
+		self.browser = self.init_mechanize()
+		self.url = {}
 
-browser.set_handle_robots(False)
-browser.set_handle_refresh(False)
-browser.addheaders =[('User-Agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36')]
+	def init_mechanize(self):
+		browser = mechanize.Browser()
+		browser.set_handle_robots(False)
+		browser.set_handle_refresh(False)
+		browser.addheaders =[('User-Agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36')]		
+		return browser
 
-domain_url = 'http://www.wyomingvalleysubaru.com'
-
-warnings.filterwarnings('ignore')
-
-def get_hrefs_from_page(html):
-	""" Extracts all hrefs from a page and returns as list """
-	urls = []
-	formatted_urls = []
-	soup = None
-
-	try:
+	def get_hrefs_from_page(self, html):
+		""" Extracts all hrefs from a page and returns as list """
+		urls = []
+		formatted_urls = []
+		
 		soup = BeautifulSoup(html, 'html.parser')
-	except:
-		pass
+		for link in soup.find_all(href=True):
+			if len(link['href'])>0:
+				urls.append(link['href'])
 
-	for link in soup.find_all(href=True):
-		# print(type(link))
-		# print(dir(link))
-		# return
-		if link['href']:
-			urls.append(link['href'])
+		for url in urls:
+			link = self.scrub_url(url)
+			if link:
+				formatted_urls.append(link)
+		formatted_urls = self.getUniqueList(formatted_urls)
+	
+		return formatted_urls
 
-	for link in urls:
-		if link[0] == '/':
-			formatted_urls.append(domain_url + link.strip())
-		elif link[0] == '#':
-			formatted_urls.append(domain_url + '/' + link.strip())
-		elif 'mailto:' in link:
-			continue
-		elif domain_url not in link:
-			continue
+
+	def scrub_url(self, url):
+		""" Cleans and scrubs the URL """
+		baseUrl = self.url.scheme + '://' + self.url.netloc
+
+		url = url.strip()
+		if url[0] == '/':
+			return baseUrl + url
+		elif url[0] == '#':
+			return baseUrl + url
+		elif 'mailto:' in url:
+			return 
+		elif not url.startswith(baseUrl):
+			return 
 		else:
-			formatted_urls.append(link.strip())
+			return url
 
-	formatted_urls = list(set(formatted_urls))
-	return formatted_urls
-
-def get_email_addreses_from_page(html):
-	""" Extracts all email addressed from page """
-	soup = None
-	try:
+	def get_email_addreses_from_page(self, html):
+		""" Extracts all email addressed from page """
+		email_pattern = "(^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$|\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)"
+		email_list = []
 		soup = BeautifulSoup(html, 'html.parser')
-	except:
-		print("Dafuk")
 
-	href_list = []
-	for link in soup.find_all(href=True):
-	    if link.get('href'):
-	    	href_list.append(link.get('href'))
-	    
-	email_list = [x for x in href_list if 'mailto' in x]
+		for tag in soup.find_all(string=re.compile(email_pattern)):
+			email_list.append(tag)
 
-	email_list_filtered = [x for x in email_list if x != 'mailto:'.strip()]
+		return email_list
 
-	return email_list_filtered
+ 	def getUniqueList(self, original_list):
+ 		""" Returns a unique list """
+ 		return list(set(original_list))
+		
+	def scrape_emails(self, seed_url):
+		""" scrapes for email addresses recursively through a domain """
+		self.url = urlparse(seed_url)
 
+		visited = []
+		toVisit = []
+		collectedEmails = []
 
-	
-def scrape_emails(seed_url):
-	""" scrapes for email addresses recursively through a domain """
-	global domain_url
-	domain_url = seed_url
+		toVisit.append(seed_url)
 
-	visited = []
-	toVisit = []
-	collectedEmails = []
+		while len(toVisit) > 0:
+			url = toVisit.pop()
+			visited.append(url)
+			print(url)
+			url = urllib.quote(url, ':/#?')
+			print(url)
+		
+			try:
+				response = self.browser.open(url)	
+				html = response.read()
 
-	toVisit.append(seed_url)
+				toVisit = toVisit + self.get_hrefs_from_page(html)
+				collectedEmails = collectedEmails + self.get_email_addreses_from_page(html)
 
-	while len(toVisit) > 0:
-		url = toVisit.pop()
-		visited.append(url)
-		print(url)
-		url = urllib.quote(url, ':/#?')
-		print(url)
-	
-		try:
-			response = browser.open(url)	
-		except:
-			print("Error")
+				toVisit = [x for x in list(set(toVisit)) if x not in visited]
+				print(len(toVisit))
+			except (mechanize.HTTPError, mechanize.URLError) as e:
+				print(e)
+			
+		return self.getUniqueList(collectedEmails)
 
-		toVisit = toVisit + get_hrefs_from_page(response)
-		print(len(toVisit))
-		collectedEmails = collectedEmails + get_email_addreses_from_page(url)
-
-		toVisit = [x for x in list(set(toVisit)) if x not in visited]
-
-	print(collectedEmails)
-
-
-scrape_emails('http://www.mygym.com/scranton')
+if __name__ == '__main__':
+	scraper = EmailScraper()
+	print(scraper.scrape_emails('http://www.thevapeboss.com/'))

@@ -5,7 +5,7 @@ import re
 from urlparse import urlparse
 from bs4 import BeautifulSoup
 
-class EmailScraper:
+class EmailScraper():
 	""" Email Scraper """
 
 	def __init__(self):

@@ -46,13 +46,13 @@ class EmailScraper(object):
         """ for printing to stderr """
         print(*args, file=sys.stderr, **kwargs)
 
-    def get_hrefs_from_page(self, html):
+    def extract_and_normalize_hrefs(self, html):
         """ Extracts all hrefs from a page and returns as list """
-        urls = self.extract_hrefs_from_soup(html)
+        urls = self.extract_hrefs_from_html(html)
         return self.normalize_url_list(urls)
 
     @classmethod
-    def extract_hrefs_from_soup(cls, html):
+    def extract_hrefs_from_html(cls, html):
         """ Returns a list of all hrefs from html """
         urls = []
         soup = bs4.BeautifulSoup(html, 'html.parser')
@@ -61,35 +61,8 @@ class EmailScraper(object):
                 urls.append(link['href'])
         return urls
 
-    def normalize_url_list(self, urls):
-        """ Normalizes all urls in list """
-        formatted_urls = []
-        for url in urls:
-            link = self.normalize_url(url)
-            if link:
-                formatted_urls.append(link)
-        return self.get_unique_list(formatted_urls)
-
-
-    def normalize_url(self, url):
-        """ Cleans and scrubs the URL """
-        base_url = self.url.scheme + '://' + self.url.netloc
-        file_pattern = re.compile(r'\.(css|ppt|jpg|gif|png|js|pdf|docx)$')
-        url = url.strip()
-
-        if url[0] == '/' or url[0] == '#':
-            url = base_url + url
-        if 'mailto:' in url:
-            return
-        elif not url.startswith(base_url):
-            return
-        elif file_pattern.search(url):
-            return
-        else:
-            return url
-
     @classmethod
-    def get_email_addreses_from_page(cls, html):
+    def extract_email_from_html(cls, html):
         """ Extracts all email addressed from page """
         email_pattern = "(^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$| \
             \b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\b)"
@@ -106,37 +79,77 @@ class EmailScraper(object):
         """ Returns a unique list """
         return list(set(original_list))
 
-    def scrape_emails(self, seed_url):
+    @classmethod
+    def print_status(cls, visited, not_visited, current_url):
+        """ Prints status to the terminal """
+        cls.eprint("Remaining: " + str(len(not_visited))
+                   + "  Visited: " + str(len(visited))
+                   + "  Current: " + current_url, end='\r')
+
+    def normalize_url_list(self, urls):
+        """ Normalizes all urls in list """
+        formatted_urls = []
+        for url in urls:
+            link = self.normalize_url(url)
+            if link:
+                formatted_urls.append(link)
+        return self.get_unique_list(formatted_urls)
+
+    def normalize_url(self, url):
+        """ Appends the base domain to relative URLs and removes
+        undesired URLs such as files """
+        base_url = self.url.scheme + '://' + self.url.netloc
+        file_identifier_pattern = re.compile(r'\.(css|ppt|jpg|gif|png|js|pdf|docx)$')
+        url = url.strip()
+
+        if url[0] == '/' or url[0] == '#':
+            url = base_url + url
+        if 'mailto:' in url:
+            return
+        elif not url.startswith(base_url):
+            return
+        elif file_identifier_pattern.search(url):
+            return
+        else:
+            return url
+
+    def extract_emails_from_url(self, seed_url):
         """ scrapes for email addresses recursively through a domain """
         self.url = urlparse.urlparse(seed_url)
 
         visited = []
-        to_visit = []
-        collected_emails = []
+        not_visited = []
+        collected_email_addresses = []
 
-        to_visit.append(seed_url)
-
-        while len(to_visit) > 0:
-            url = to_visit.pop()
+        not_visited.append(seed_url)
+        while len(not_visited) > 0:
+            url = not_visited.pop()
             visited.append(url)
-            self.eprint(url)
             url = urllib.quote(url, ':/#?')
-            self.eprint(url)
 
             try:
                 response = self.browser.open(url)
                 html = response.read()
 
-                to_visit = to_visit + self.get_hrefs_from_page(html)
-                collected_emails = collected_emails + self.get_email_addreses_from_page(html)
+                not_visited = not_visited + self.extract_and_normalize_hrefs(html)
+                collected_email_addresses = collected_email_addresses + \
+                    self.extract_email_from_html(html)
 
-                to_visit = [x for x in list(set(to_visit)) if x not in visited]
-                self.eprint(len(to_visit))
+                not_visited = [x for x in list(set(not_visited)) if x not in visited]
+                self.print_status(visited, not_visited, url)
             except (mechanize.HTTPError, mechanize.URLError) as error:
-                self.eprint(error)
+                self.eprint(error, url)
 
-        return self.get_unique_list(collected_emails)
+        return self.get_unique_list(collected_email_addresses)
+
 
 if __name__ == '__main__':
+
+    import argparse
+
+    PARSER = argparse.ArgumentParser(description='Recursively scrape email addresses from a url')
+    PARSER.add_argument('url', help="the fully qualified domain name (http://www.example.com)")
+    ARGS = PARSER.parse_args()
+
     SCRAPER = EmailScraper()
-    print(SCRAPER.scrape_emails('http://www.valleyviewsd.org/'))
+    print(SCRAPER.extract_emails_from_url(ARGS.url))

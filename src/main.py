@@ -9,7 +9,8 @@ class EmailScraper:
 	""" Email Scraper """
 
 	def __init__(self):
-		warnings.filterwarnings('ignore')
+		""" """
+		warnings.filterwarnings('ignore') #ignore warnings
 		self.browser = self.init_mechanize()
 		self.url = {}
 
@@ -22,36 +23,43 @@ class EmailScraper:
 
 	def get_hrefs_from_page(self, html):
 		""" Extracts all hrefs from a page and returns as list """
+		urls = self.get_all_hrefs_from_soup(html)
+		return self.scrub_url_list(urls)
+
+	def get_all_hrefs_from_soup(self, html):
 		urls = []
-		formatted_urls = []
-		
 		soup = BeautifulSoup(html, 'html.parser')
 		for link in soup.find_all(href=True):
 			if len(link['href'])>0:
 				urls.append(link['href'])
+		return urls
 
+	def scrub_url_list(self, urls):
+		""" """
+		formatted_urls = []
 		for url in urls:
 			link = self.scrub_url(url)
 			if link:
 				formatted_urls.append(link)
-		formatted_urls = self.getUniqueList(formatted_urls)
-	
-		return formatted_urls
+		return self.getUniqueList(formatted_urls)		
 
 
 	def scrub_url(self, url):
 		""" Cleans and scrubs the URL """
 		baseUrl = self.url.scheme + '://' + self.url.netloc
 
+		filePattern = re.compile('\.(css|ppt|jpg|gif|png|js|pdf|docx)$')
+
 		url = url.strip()
-		if url[0] == '/':
-			return baseUrl + url
-		elif url[0] == '#':
-			return baseUrl + url
-		elif 'mailto:' in url:
+		if url[0] == '/' or url[0] == '#':
+			url = baseUrl + url
+
+		if 'mailto:' in url:
 			return 
 		elif not url.startswith(baseUrl):
 			return 
+		elif filePattern.search(url):
+			return
 		else:
 			return url
 
@@ -103,4 +111,4 @@ class EmailScraper:
 
 if __name__ == '__main__':
 	scraper = EmailScraper()
-	print(scraper.scrape_emails('http://www.thevapeboss.com/'))
+	print(scraper.scrape_emails('http://www.valleyviewsd.org/'))

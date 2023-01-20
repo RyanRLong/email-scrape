@@ -5,7 +5,7 @@ configparser==3.5.0
 isort==4.2.5
 lazy-object-proxy==1.2.2
 mccabe==0.5.3
-mechanize==0.2.5
+mechanize==0.4.6
 pylint==1.6.4
 six==1.10.0
 wrapt==1.10.8
